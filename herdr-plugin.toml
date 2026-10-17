@@ -1,0 +1,30 @@
+id = "jwarykowski.herdr-keybars"
+name = "keybars"
+version = "0.1.0"
+min_herdr_version = "0.9.3"
+description = "herdr's agents on your keyboard through keybars Pro: number key N breathes while workspace N's agent waits on you, holds when it's done, and the top-right key jumps to it"
+platforms = ["linux", "macos"]
+
+# keep the watcher running for the session; it exits when herdr stops
+[[startup]]
+command = ["bin/watch", "start"]
+
+[[actions]]
+id = "next-agent"
+title = "keybars: focus the agent that needs you"
+command = ["bin/next-agent"]
+
+[[actions]]
+id = "toggle"
+title = "keybars: agent lights off / on"
+command = ["bin/watch", "toggle"]
+
+[[actions]]
+id = "keyboard"
+title = "keybars: keyboard lights off / on"
+command = ["bin/watch", "keyboard"]
+
+[[actions]]
+id = "restart"
+title = "keybars: restart watcher (after config changes)"
+command = ["sh", "-c", "bin/watch stop; bin/watch start"]

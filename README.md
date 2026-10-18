@@ -59,6 +59,7 @@ rows = [["state_icon", "workspace", "$focus"], ["branch", "git_status"]]
 |---|---|
 | `jwarykowski.herdr-keybars.next-agent` | focus the next blocked agent, else the next done one; repeat to cycle |
 | `jwarykowski.herdr-keybars.setup` | install the GitHub rule packs, and bridge herdr-gh and herdr-pomodoro |
+| `jwarykowski.herdr-keybars.mcp` | give Claude Code keybars Pro's tools (`keybars-pro mcp`), so an agent can light keys itself; other agents take the same command in their MCP settings |
 | `jwarykowski.herdr-keybars.focus` | keybars Pro's Focus timer start / stop |
 | `jwarykowski.herdr-keybars.toggle` | agent lights off / on |
 | `jwarykowski.herdr-keybars.keyboard` | keybars Pro's lights off / on (its On switch) |
@@ -120,6 +121,13 @@ merged PR in [herdr-gh](https://github.com/jwarykowski/herdr-gh)'s
 keybars-pro light all purple -effect ripple
 ```
 
+## Neovim
+
+[herdr.nvim](https://code.warykowski.io/jwarykowski/herdr.nvim) with
+`keybars = true` is the editor's half: `:KeybarsRun make test` shows a build on
+the keyboard and opens failures in the quickfix list, errors can hold a key,
+and a statusline component shows Focus and typing speed.
+
 ## Configuration
 
 Optional. Put overrides in `config.env` inside the plugin config directory
@@ -134,8 +142,8 @@ On a Moonlander, workspaces 1–9 are the number row's 1–5 and 6–9
 
 ## Development
 
-`make check` runs shellcheck, `tests/watch_test.sh` and
-`tests/bridge_test.sh`, which drive the scripts with fake `herdr` and
+`make check` runs shellcheck, `tests/watch_test.sh`, `tests/bridge_test.sh`
+and `tests/mcp_test.sh`, which drive the scripts with fake `herdr` and
 `keybars-pro` commands.
 
 ## Licence

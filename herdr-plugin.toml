@@ -1,6 +1,6 @@
 id = "jwarykowski.herdr-keybars"
 name = "keybars"
-version = "0.2.0"
+version = "0.3.0"
 min_herdr_version = "0.9.3"
 description = "herdr's agents on your keyboard through keybars Pro: number key N breathes while workspace N's agent waits on you, holds when it's done, and the top-right key jumps to it; herdr-gh's CI and reviews and herdr-pomodoro's timer come too"
 platforms = ["linux", "macos"]
@@ -18,6 +18,11 @@ command = ["bin/next-agent"]
 id = "setup"
 title = "keybars: set up (rules, and bridges to GitHub status and Pomodoro)"
 command = ["bin/setup"]
+
+[[actions]]
+id = "mcp"
+title = "keybars: give Claude Code keybars Pro's tools (MCP)"
+command = ["bin/mcp"]
 
 [[actions]]
 id = "focus"

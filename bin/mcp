@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# herdr-keybars mcp: gives your agents keybars Pro as tools of their own
+# (keybars-pro mcp), so one can light a key itself: "tests pass, ready for
+# review". Claude Code is set up here, for every project; other agents take
+# the same command in their MCP settings (keybars.app/pro/cli/#mcp).
+set -uo pipefail
+
+PATH="$PATH:$HOME/.local/bin:/usr/local/bin:/opt/homebrew/bin"
+
+herdr="${HERDR_BIN_PATH:-herdr}"
+kp="${HERDR_KEYBARS_COMMAND:-keybars-pro}"
+claude="${HERDR_KEYBARS_CLAUDE:-claude}"
+
+say() {
+  echo "$1"
+  "$herdr" notification show "$1" >/dev/null 2>&1 || true
+}
+
+if ! command -v "$kp" >/dev/null 2>&1; then
+  say "herdr-keybars needs keybars Pro's keybars-pro command: App settings, Install the command-line tool"
+  exit 1
+fi
+if ! command -v "$claude" >/dev/null 2>&1; then
+  say "No Claude Code here. Other agents: add \"$kp mcp\" to their MCP settings (keybars.app/pro/cli/#mcp)"
+  exit 0
+fi
+if "$claude" mcp get keybars >/dev/null 2>&1; then
+  say "Claude Code already has keybars Pro's tools"
+  exit 0
+fi
+if "$claude" mcp add --scope user keybars -- "$kp" mcp >/dev/null 2>&1; then
+  say "Claude Code has keybars Pro's tools: new sessions can light keys themselves"
+else
+  say "Couldn't add keybars Pro to Claude Code: run claude mcp add --scope user keybars -- $kp mcp"
+fi

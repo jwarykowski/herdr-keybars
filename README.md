@@ -29,7 +29,8 @@ It replaces herdr-zsa-lights, which needed Keymapp and kontroll.
 
 - herdr 0.9.3+
 - keybars Pro running, with its command installed: App settings, Command
-  line, **Install the command-line tool** (`keybars-pro` on your PATH)
+  line, **Install the command-line tool** (`keybars-pro` on your PATH). The
+  bridges need a build with `keybars-pro notify -source`.
 - `jq`, `bash`
 
 ## Install

@@ -4,8 +4,9 @@
 # waiting agent.
 set -euo pipefail
 
-PATH="$PATH:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin"
-herdr="${HERDR_BIN_PATH:-herdr}"
+# shellcheck source-path=SCRIPTDIR/..
+# shellcheck source=lib/herdr.sh
+source "$(cd "$(dirname "$0")/.." && pwd)/lib/herdr.sh"
 
 target=$("$herdr" agent list | jq -r '
   .result.agents
@@ -15,7 +16,7 @@ target=$("$herdr" agent list | jq -r '
   | .[0].pane_id // empty')
 
 if [[ -z "$target" ]]; then
-  "$herdr" notification show "no agents waiting" >/dev/null
+  notify "no agents waiting"
   exit 0
 fi
 "$herdr" agent focus "$target" >/dev/null

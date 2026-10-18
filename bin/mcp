@@ -5,18 +5,17 @@
 # the same command in their MCP settings (keybars.app/pro/cli/#mcp).
 set -uo pipefail
 
-PATH="$PATH:$HOME/.local/bin:/usr/local/bin:/opt/homebrew/bin"
-
-herdr="${HERDR_BIN_PATH:-herdr}"
-kp="${HERDR_KEYBARS_COMMAND:-keybars-pro}"
+# shellcheck source-path=SCRIPTDIR/..
+# shellcheck source=lib/herdr.sh
+source "$(cd "$(dirname "$0")/.." && pwd)/lib/herdr.sh"
 claude="${HERDR_KEYBARS_CLAUDE:-claude}"
 
 say() {
   echo "$1"
-  "$herdr" notification show "$1" >/dev/null 2>&1 || true
+  notify "$1"
 }
 
-if ! command -v "$kp" >/dev/null 2>&1; then
+if ! have_keybars; then
   say "herdr-keybars needs keybars Pro's keybars-pro command: App settings, Install the command-line tool"
   exit 1
 fi

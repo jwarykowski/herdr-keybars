@@ -4,10 +4,10 @@
 #   number key N  workspace N (as ctrl+alt+N): breathing while its agent is
 #                 blocked on you, held while it's done
 #   top-right     breathing while any agent is blocked (next-agent jumps there)
-#   number key N  also held red while workspace N's CI fails, as herdr-gh
-#                 reports it through the bridge (bin/bridge), when no agent
-#                 state is showing
-#   $focus        keybars Pro's Focus timer in herdr's sidebar: 🎯12m, ☕3m
+#   number key N  also held red while workspace N's CI fails, as bin/github
+#                 sees it, when no agent state is showing
+#   $focus        keybars Pro's Focus timer in herdr's sidebar: 🎯12m, ☕3m,
+#                 with a notification when a break starts and ends
 # Lights play over keybars Pro's music, and only what changes is sent.
 #
 # usage: watch start    spawn the watcher in the background (startup hook)
@@ -17,15 +17,9 @@
 #        watch keyboard keybars Pro's lights off / on (its header switch)
 set -uo pipefail
 
-# plugin commands inherit herdr's environment; add where keybars Pro's
-# install button and Homebrew put commands
-PATH="$PATH:$HOME/.local/bin:/usr/local/bin:/opt/homebrew/bin"
-
-herdr="${HERDR_BIN_PATH:-herdr}"
-kp="${HERDR_KEYBARS_COMMAND:-keybars-pro}"
-state_dir="${HERDR_PLUGIN_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/herdr-keybars}"
-config_dir="${HERDR_PLUGIN_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/herdr-keybars}"
-pidfile="$state_dir/watcher.pid"
+# shellcheck source-path=SCRIPTDIR/..
+# shellcheck source=lib/herdr.sh
+source "$(cd "$(dirname "$0")/.." && pwd)/lib/herdr.sh"
 disabled="$state_dir/disabled"
 
 # defaults, unless the environment sets them; config.env overrides either
@@ -40,22 +34,13 @@ disabled="$state_dir/disabled"
 : "${HERDR_KEYBARS_EVENTS:=1}"
 # workspace keys 1-9 by position; empty picks them for the keyboard
 : "${HERDR_KEYBARS_KEYS:=}"
-# failing CI on the workspace's key, from herdr-gh through the bridge
+# failing CI on the workspace's key, from bin/github
 : "${HERDR_KEYBARS_CI_KEYS:=1}"
 : "${HERDR_KEYBARS_CI:=red}"
 : "${HERDR_KEYBARS_CI_EFFECT:=hold}"
 # the sidebar token for keybars Pro's Focus timer; empty for none
 : "${HERDR_KEYBARS_FOCUS_TOKEN:=focus}"
-# shellcheck source=/dev/null
-[[ -f "$config_dir/config.env" ]] && source "$config_dir/config.env"
-
-notify() {
-  "$herdr" notification show "$1" >/dev/null 2>&1 || true
-}
-
-have_keybars() {
-  command -v "$kp" >/dev/null 2>&1
-}
+load_config
 
 # keys is the workspace keys 1-9: the number row, which sits differently on
 # each board
@@ -153,44 +138,43 @@ clear_all() {
   return 0
 }
 
-# focus_value is the Focus timer as a sidebar token: 🎯12m, ☕3m, or nothing
-focus_value() {
-  "$kp" focus status -json 2>/dev/null | jq -r '
-    if .phase == "work" then "🎯\((.remaining / 60) | ceil)m"
-    elif .phase == "break" then "☕\((.remaining / 60) | ceil)m"
-    else "" end' 2>/dev/null
+# focus_state is keybars Pro's Focus timer as "phase minutes-left", or
+# nothing when it isn't running
+focus_state() {
+  "$kp" focus status -json 2>/dev/null |
+    jq -r 'if .phase == "work" or .phase == "break" then "\(.phase) \((.remaining / 60) | ceil)" else "" end' 2>/dev/null
 }
 
-# report_focus puts the Focus token on every workspace, or clears it; it
-# lives 90 seconds, so a stopped watcher's token doesn't linger
-report_focus() {
-  local id
-  for id in $("$herdr" workspace list 2>/dev/null | jq -r '.result.workspaces[].workspace_id // empty'); do
-    if [[ -n $1 ]]; then
-      "$herdr" workspace report-metadata "$id" --source herdr-keybars --ttl-ms 90000 \
-        --token "$HERDR_KEYBARS_FOCUS_TOKEN=$1" >/dev/null 2>&1
-    else
-      "$herdr" workspace report-metadata "$id" --source herdr-keybars \
-        --clear-token "$HERDR_KEYBARS_FOCUS_TOKEN" >/dev/null 2>&1
-    fi
-  done
+# focus_token is the sidebar token for a focus_state: 🎯12m, ☕3m
+focus_token() {
+  case ${1%% *} in
+    work) echo "🎯${1##* }m" ;;
+    break) echo "☕${1##* }m" ;;
+  esac
 }
 
-running() {
-  [[ -f "$pidfile" ]] && kill -0 "$(cat "$pidfile")" 2>/dev/null
+# focus_changed tells you when a break starts and ends, as the timer itself
+# only shows on the keyboard
+focus_changed() {
+  local from=${1%% *} to=${2%% *}
+  [[ $from == "$to" ]] && return 0
+  if [[ $to == break ]]; then
+    notify "Focus: time for a break (${2##* } minutes)"
+  elif [[ $from == break ]]; then
+    notify "Focus: break over"
+  fi
 }
 
 run() {
-  local last="" current misses=0 ks focus="" shown="" reported=0
-  mkdir -p "$state_dir"
-  running || echo $$ >"$pidfile" # started directly (start already wrote it)
+  local last="" current misses=0 ks focus="" focus_was="" reported=0
+  claim watch
   if ! have_keybars; then
     notify "herdr-keybars needs keybars Pro's keybars-pro command: App settings, Install the command-line tool"
-    rm -f "$pidfile"
+    rm -f "$state_dir/watch.pid"
     return 1
   fi
   ks=$(keys)
-  trap 'clear_all "$ks"; rm -f "$pidfile"; exit 0' INT TERM
+  trap 'clear_all "$ks"; rm -f "$state_dir/watch.pid"; exit 0' INT TERM
   # exit once herdr has been unreachable for a few polls (server stopped);
   # the startup hook spawns a fresh watcher with the next session
   while ((misses < 5)); do
@@ -205,43 +189,27 @@ run() {
     if [[ "$current" != "$last" ]]; then
       apply "$current" "$last" && last="$current"
     fi
-    # the Focus token on change, and each minute so it doesn't expire
-    if [[ -n $HERDR_KEYBARS_FOCUS_TOKEN ]]; then
-      focus=$(focus_value)
-      if [[ $focus != "$shown" ]] || { [[ -n $focus ]] && ((SECONDS - reported >= 60)); }; then
-        report_focus "$focus"
-        shown=$focus reported=$SECONDS
-      fi
+    # Focus: a notification as breaks start and end, and the token on
+    # change and each minute, so it doesn't expire
+    focus=$(focus_state)
+    focus_changed "$focus_was" "$focus"
+    if [[ -n $HERDR_KEYBARS_FOCUS_TOKEN ]] &&
+      { [[ $focus != "$focus_was" ]] || { [[ -n $focus ]] && ((SECONDS - reported >= 60)); }; }; then
+      token_all "$HERDR_KEYBARS_FOCUS_TOKEN" "$(focus_token "$focus")" 90000
+      reported=$SECONDS
     fi
+    focus_was=$focus
     # background sleep + wait, so stop's TERM lands immediately
     sleep "$HERDR_KEYBARS_INTERVAL" &
     wait $!
   done
   clear_all "$ks"
-  rm -f "$pidfile"
+  rm -f "$state_dir/watch.pid"
 }
 
 case "${1:-}" in
-  start)
-    mkdir -p "$state_dir"
-    # herdr runs actions asynchronously, so two starts can overlap: mkdir is
-    # an atomic lock, and the pidfile is written here, not by the child later
-    mkdir "$state_dir/start.lock" 2>/dev/null || exit 0
-    trap 'rmdir "$state_dir/start.lock"' EXIT
-    running && exit 0
-    nohup "$0" run >"$state_dir/watcher.log" 2>&1 &
-    echo $! >"$pidfile"
-    disown
-    ;;
-  stop)
-    running || exit 0
-    kill "$(cat "$pidfile")"
-    # wait for the trap to clear the pidfile so a following start can run
-    for _ in 1 2 3 4 5 6 7 8 9 10; do
-      running || break
-      sleep 0.2
-    done
-    ;;
+  start) spawn watch ;;
+  stop) halt watch ;;
   run) run ;;
   keyboard)
     state=$("$kp" toggle 2>/dev/null) || {

@@ -1,0 +1,180 @@
+#!/usr/bin/env bash
+# herdr-keybars github: each herdr workspace's pull request in the sidebar,
+# and its changes on the keyboard. The sidebar value, e.g.
+#
+#   #412│×│!   PR #412 (d412 = draft), CI failed, changes requested
+#   #415│√│+   CI passed, approved
+#   #401│↗     merged      #398│†   closed
+#
+# is a workspace token ($gh by default) that expires after three missed polls,
+# so stopping leaves nothing stale. Changes go to keybars Pro as GitHub's own
+# events (keybars-pro notify -source github), so GitHub rules play them:
+# ci.running, ci.passed, ci.failed, review.approved, review.changes_requested,
+# pull_request.merged and pull_request.closed. Failing CI also marks the
+# workspace, so the watcher holds its number key red. It uses your gh login,
+# so there's no webhook to set up.
+#
+# usage: github start   spawn the reporter in the background (startup hook)
+#        github stop    stop it
+#        github run     report in the foreground until herdr goes away
+#        github once    report once and exit (refresh action)
+set -uo pipefail
+
+# shellcheck source-path=SCRIPTDIR/..
+# shellcheck source=lib/herdr.sh
+source "$(cd "$(dirname "$0")/.." && pwd)/lib/herdr.sh"
+
+# defaults, unless the environment sets them; config.env overrides either
+: "${HERDR_KEYBARS_GH:=1}"
+: "${HERDR_KEYBARS_GH_INTERVAL:=60}"
+: "${HERDR_KEYBARS_GH_TOKEN:=gh}"
+: "${HERDR_KEYBARS_GH_SEPARATOR:=│}"
+: "${HERDR_KEYBARS_GH_DRAFT:=d}"
+: "${HERDR_KEYBARS_GH_PASSED:=√}"
+: "${HERDR_KEYBARS_GH_FAILED:=×}"
+: "${HERDR_KEYBARS_GH_RUNNING:=•}"
+: "${HERDR_KEYBARS_GH_APPROVED:=+}"
+: "${HERDR_KEYBARS_GH_CHANGES:=!}"
+: "${HERDR_KEYBARS_GH_MERGED:=↗}"
+: "${HERDR_KEYBARS_GH_CLOSED:=†}"
+load_config
+
+ttl_ms=$((HERDR_KEYBARS_GH_INTERVAL * 3 * 1000))
+
+# pr_fields prints the PR for the branch checked out in $1 as one line of
+# fields separated by \x1f (read collapses empty tab-separated fields):
+# number, url, title, branch, state, ci, review, and the token value.
+# Nothing without a PR.
+pr_fields() {
+  (cd "$1" && gh pr view --json number,url,title,headRefName,state,isDraft,reviewDecision,statusCheckRollup 2>/dev/null) |
+    jq -r \
+      --arg sep "$HERDR_KEYBARS_GH_SEPARATOR" --arg draft "$HERDR_KEYBARS_GH_DRAFT" \
+      --arg passed "$HERDR_KEYBARS_GH_PASSED" --arg failed "$HERDR_KEYBARS_GH_FAILED" \
+      --arg running "$HERDR_KEYBARS_GH_RUNNING" --arg approved "$HERDR_KEYBARS_GH_APPROVED" \
+      --arg changes "$HERDR_KEYBARS_GH_CHANGES" --arg merged "$HERDR_KEYBARS_GH_MERGED" \
+      --arg closed "$HERDR_KEYBARS_GH_CLOSED" '
+      def ci:
+        if length == 0 then ""
+        elif any(.[]; (.conclusion // .state // "")
+                      | test("FAILURE|ERROR|CANCELLED|TIMED_OUT|ACTION_REQUIRED")) then "failed"
+        elif any(.[]; (.status // "COMPLETED") != "COMPLETED"
+                      or ((.state // "") | test("PENDING|EXPECTED"))) then "running"
+        else "passed" end;
+      (.statusCheckRollup // [] | ci) as $ci
+      | ({"APPROVED": "approved", "CHANGES_REQUESTED": "changes_requested"}[.reviewDecision // ""] // "") as $review
+      | ((if .isDraft then $draft else "#" end) + (.number | tostring)) as $number
+      | (if .state == "MERGED" then [$number, $merged]
+         elif .state == "CLOSED" then [$number, $closed]
+         else [ $number,
+                ({"passed": $passed, "failed": $failed, "running": $running}[$ci] // ""),
+                ({"approved": $approved, "changes_requested": $changes}[$review] // "") ]
+         end | map(select(. != "")) | join($sep)) as $value
+      | [.number, .url, (.title | gsub("\n"; " ")), .headRefName,
+         (.state | ascii_downcase), $ci, $review, $value]
+      | map(tostring) | join("\u001f")'
+}
+
+# event sends a change to keybars Pro as GitHub's, about this PR's repo and
+# branch (the caller sets the pr_* variables), and marks failing CI for the
+# watcher's number keys
+event() {
+  local repo
+  repo=$(sed -E 's#https://[^/]+/([^/]+/[^/]+)/pull/.*#\1#' <<<"$pr_url")
+  mkdir -p "$state_dir/ci"
+  case $1 in
+    ci.failed) echo "$repo" >"$state_dir/ci/$id" ;;
+    ci.passed | pull_request.*) rm -f "$state_dir/ci/$id" ;;
+  esac
+  have_keybars && "$kp" notify -q -source github -repo "$repo" -branch "$pr_branch" "$1"
+  return 0
+}
+
+# events compares the PR with what the last poll saw and sends what changed.
+# A PR seen for the first time is only recorded, so a restart or an already
+# merged branch sends nothing.
+events() {
+  local file prev_state="" prev_ci="" prev_review="" seen=0
+  file="$state_dir/prs/$(tr -c 'A-Za-z0-9' '_' <<<"$pr_url")"
+  if [[ -f "$file" ]]; then
+    IFS=$'\x1f' read -r prev_state prev_ci prev_review <"$file"
+    seen=1
+  fi
+  mkdir -p "$state_dir/prs"
+  printf '%s\x1f%s\x1f%s\n' "$pr_state" "$pr_ci" "$pr_review" >"$file"
+  ((seen)) || return 0
+  if [[ "$pr_state" != "$prev_state" && "$pr_state" != open ]]; then
+    event "pull_request.$pr_state"
+  fi
+  if [[ "$pr_state" == open ]]; then
+    if [[ "$pr_ci" != "$prev_ci" && -n "$pr_ci" ]]; then
+      event "ci.$pr_ci"
+    fi
+    if [[ "$pr_review" != "$prev_review" && -n "$pr_review" ]]; then
+      event "review.$pr_review"
+    fi
+  fi
+}
+
+# once is one pass over every workspace; fails when herdr isn't reachable
+once() {
+  local snapshot id cwd value fields
+  local pr_url pr_branch pr_state pr_ci pr_review
+  snapshot=$("$herdr" api snapshot 2>/dev/null) || return 1
+  gh auth status >/dev/null 2>&1 || return 0
+  # one line per workspace: id and the cwd of its first pane
+  jq -r '
+    .result.snapshot as $s
+    | $s.workspaces[]
+    | .workspace_id as $w
+    | [$w, ([$s.panes[] | select(.workspace_id == $w) | .cwd] | first // "")]
+    | @tsv' <<<"$snapshot" |
+    while IFS=$'\t' read -r id cwd; do
+      value=""
+      if [[ -n "$cwd" ]] && git -C "$cwd" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        fields=$(pr_fields "$cwd")
+        if [[ -n "$fields" ]]; then
+          IFS=$'\x1f' read -r _ pr_url _ pr_branch pr_state pr_ci pr_review value <<<"$fields"
+          events
+        fi
+      fi
+      token "$id" "$HERDR_KEYBARS_GH_TOKEN" "$value" "$ttl_ms"
+    done
+}
+
+# once_locked runs one pass unless another is under way (the refresh action
+# can overlap the reporter), so a change is sent once
+once_locked() {
+  mkdir -p "$state_dir"
+  mkdir "$state_dir/once.lock" 2>/dev/null || return 0
+  once
+  local rc=$?
+  rmdir "$state_dir/once.lock"
+  return $rc
+}
+
+run() {
+  local misses=0
+  claim github
+  trap 'rm -f "$state_dir/github.pid"; rmdir "$state_dir/once.lock" 2>/dev/null; exit 0' INT TERM
+  # exit once herdr has been unreachable for three polls (server stopped);
+  # the startup hook spawns a fresh reporter with the next session
+  while ((misses < 3)); do
+    if once_locked; then misses=0; else misses=$((misses + 1)); fi
+    # background sleep + wait, so stop's TERM lands immediately
+    sleep "$HERDR_KEYBARS_GH_INTERVAL" &
+    wait $!
+  done
+  rm -f "$state_dir/github.pid"
+}
+
+case "${1:-}" in
+  start) ((HERDR_KEYBARS_GH)) && spawn github ;;
+  stop) halt github ;;
+  run) run ;;
+  once) once_locked ;;
+  *)
+    echo "usage: github start|stop|run|once" >&2
+    exit 1
+    ;;
+esac
+exit 0

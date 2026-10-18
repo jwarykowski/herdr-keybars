@@ -1,13 +1,17 @@
 id = "jwarykowski.herdr-keybars"
 name = "keybars"
-version = "0.3.0"
+version = "0.4.0"
 min_herdr_version = "0.9.3"
-description = "herdr's agents on your keyboard through keybars Pro: number key N breathes while workspace N's agent waits on you, holds when it's done, and the top-right key jumps to it; herdr-gh's CI and reviews and herdr-pomodoro's timer come too"
+description = "herdr on your keyboard through keybars Pro: number key N breathes while workspace N's agent waits on you and holds red while its CI fails, each workspace's pull request in the sidebar with its changes on the keys, and keybars Pro's Focus timer as $focus"
 platforms = ["linux", "macos"]
 
-# keep the watcher running for the session; it exits when herdr stops
+# keep the watcher and the GitHub reporter running for the session; each
+# exits when herdr stops
 [[startup]]
 command = ["bin/watch", "start"]
+
+[[startup]]
+command = ["bin/github", "start"]
 
 [[actions]]
 id = "next-agent"
@@ -15,19 +19,34 @@ title = "keybars: focus the agent that needs you"
 command = ["bin/next-agent"]
 
 [[actions]]
+id = "focus"
+title = "keybars: Focus timer start / stop"
+command = ["bin/focus"]
+
+[[actions]]
+id = "focus-start"
+title = "keybars: start a Focus session"
+command = ["bin/focus", "start"]
+
+[[actions]]
+id = "focus-stop"
+title = "keybars: stop Focus"
+command = ["bin/focus", "stop"]
+
+[[actions]]
+id = "github-refresh"
+title = "keybars: refresh pull requests now"
+command = ["bin/github", "once"]
+
+[[actions]]
 id = "setup"
-title = "keybars: set up (rules, and bridges to GitHub status and Pomodoro)"
+title = "keybars: install the GitHub rule packs"
 command = ["bin/setup"]
 
 [[actions]]
 id = "mcp"
 title = "keybars: give Claude Code keybars Pro's tools (MCP)"
 command = ["bin/mcp"]
-
-[[actions]]
-id = "focus"
-title = "keybars: Focus timer start / stop"
-command = ["bin/focus"]
 
 [[actions]]
 id = "toggle"
@@ -40,11 +59,6 @@ title = "keybars: keyboard lights off / on"
 command = ["bin/watch", "keyboard"]
 
 [[actions]]
-id = "remove-bridges"
-title = "keybars: remove the bridges from GitHub status and Pomodoro"
-command = ["bin/setup", "remove"]
-
-[[actions]]
 id = "restart"
-title = "keybars: restart watcher (after config changes)"
-command = ["sh", "-c", "bin/watch stop; bin/watch start"]
+title = "keybars: restart (after config changes)"
+command = ["sh", "-c", "bin/watch stop; bin/github stop; bin/watch start; bin/github start"]

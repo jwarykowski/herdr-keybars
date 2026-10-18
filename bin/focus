@@ -1,21 +1,30 @@
 #!/usr/bin/env bash
-# herdr-keybars focus: start keybars Pro's Focus timer, or stop it if it's
-# running. The watcher shows it in the sidebar as $focus.
+# herdr-keybars focus: keybars Pro's Focus timer, from herdr. The watcher
+# shows it in the sidebar as $focus and says when breaks start and end.
+#
+# usage: focus [toggle]   start it, or stop it if it's running
+#        focus start [25m] | stop
 set -uo pipefail
 
-PATH="$PATH:$HOME/.local/bin:/usr/local/bin:/opt/homebrew/bin"
-
-herdr="${HERDR_BIN_PATH:-herdr}"
-kp="${HERDR_KEYBARS_COMMAND:-keybars-pro}"
-
-notify() { "$herdr" notification show "$1" >/dev/null 2>&1 || true; }
+# shellcheck source-path=SCRIPTDIR/..
+# shellcheck source=lib/herdr.sh
+source "$(cd "$(dirname "$0")/.." && pwd)/lib/herdr.sh"
 
 if ! phase=$("$kp" focus status -json 2>/dev/null | jq -r '.phase // ""'); then
   notify "keybars Pro isn't running"
   exit 0
 fi
-if [[ -n $phase ]]; then
-  "$kp" focus stop >/dev/null 2>&1 && notify "Focus stopped"
-else
-  "$kp" focus start >/dev/null 2>&1 && notify "Focus started"
+action=${1:-toggle}
+if [[ $action == toggle ]]; then
+  action=start
+  [[ -n $phase ]] && action=stop
 fi
+case $action in
+  start) "$kp" focus start ${2:+"$2"} >/dev/null 2>&1 && notify "Focus started" ;;
+  stop) "$kp" focus stop >/dev/null 2>&1 && notify "Focus stopped" ;;
+  *)
+    echo "usage: focus [toggle | start [25m] | stop]" >&2
+    exit 1
+    ;;
+esac
+exit 0

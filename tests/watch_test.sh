@@ -3,26 +3,22 @@
 # it sends as workspaces change.
 set -euo pipefail
 
-root=$(cd "$(dirname "$0")/.." && pwd)
-tmp=$(mktemp -d)
-trap 'kill "${pid:-}" 2>/dev/null || true; rm -rf "$tmp"' EXIT
+# shellcheck source=tests/lib.sh
+source "$(dirname "$0")/lib.sh"
 
-cat >"$tmp/herdr" <<'SH'
-#!/bin/sh
+fake herdr <<'SH'
 case "$1 $2" in
   "workspace list") cat "$FAKE/workspaces.json" ;;
   *) echo "$*" >>"$FAKE/herdr.log" ;;
 esac
 SH
-cat >"$tmp/keybars-pro" <<'SH'
-#!/bin/sh
+fake keybars-pro <<'SH'
 case "$1 $2" in
   "status -json") echo '{"keyboard":"Moonlander Mark I"}' ;;
   "focus status") cat "$FAKE/focus.json" 2>/dev/null || echo '{"phase":""}' ;;
   *) echo "$*" >>"$FAKE/kp.log" ;;
 esac
 SH
-chmod +x "$tmp/herdr" "$tmp/keybars-pro"
 
 workspaces() {
   # number:status pairs
@@ -34,25 +30,9 @@ workspaces() {
   echo "$out]}}" >"$tmp/workspaces.json"
 }
 
-fail=0
-expect() {
-  local want=$1
-  if ! grep -qxF -- "$want" "$tmp/kp.log"; then
-    echo "FAIL: never sent: $want" >&2
-    fail=1
-  fi
-}
-reject() {
-  if grep -qxF -- "$1" "$tmp/kp.log"; then
-    echo "FAIL: sent: $1" >&2
-    fail=1
-  fi
-}
 settle() { sleep 0.5; }
 
-export FAKE=$tmp HERDR_BIN_PATH=$tmp/herdr HERDR_KEYBARS_COMMAND=$tmp/keybars-pro
-export HERDR_PLUGIN_STATE_DIR=$tmp/state HERDR_PLUGIN_CONFIG_DIR=$tmp/config HERDR_KEYBARS_INTERVAL=0.1
-touch "$tmp/kp.log"
+export HERDR_KEYBARS_INTERVAL=0.1
 
 workspaces 1:working 2:working
 "$root/bin/watch" run &
@@ -111,10 +91,14 @@ settle
 grep -qF -- "workspace report-metadata w1 --source herdr-keybars --clear-token focus" "$tmp/herdr.log" ||
   { echo "FAIL: focus token not cleared" >&2; fail=1; }
 
+# breaks starting and ending are announced, as the timer only shows on the keys
+echo '{"phase":"break","remaining":290}' >"$tmp/focus.json"
+settle
+check grep -qF "notification show Focus: time for a break (5 minutes)" "$tmp/herdr.log"
+echo '{"phase":""}' >"$tmp/focus.json"
+settle
+check grep -qF "notification show Focus: break over" "$tmp/herdr.log"
+
 kill "$pid"
 wait "$pid" 2>/dev/null || true
-if ((fail)); then
-  echo "watch_test: failed" >&2
-  exit 1
-fi
-echo "watch_test: ok"
+finish watch_test

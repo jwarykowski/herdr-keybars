@@ -1,8 +1,8 @@
 id = "jwarykowski.herdr-keybars"
 name = "keybars"
-version = "0.1.0"
+version = "0.2.0"
 min_herdr_version = "0.9.3"
-description = "herdr's agents on your keyboard through keybars Pro: number key N breathes while workspace N's agent waits on you, holds when it's done, and the top-right key jumps to it"
+description = "herdr's agents on your keyboard through keybars Pro: number key N breathes while workspace N's agent waits on you, holds when it's done, and the top-right key jumps to it; herdr-gh's CI and reviews and herdr-pomodoro's timer come too"
 platforms = ["linux", "macos"]
 
 # keep the watcher running for the session; it exits when herdr stops
@@ -15,6 +15,16 @@ title = "keybars: focus the agent that needs you"
 command = ["bin/next-agent"]
 
 [[actions]]
+id = "setup"
+title = "keybars: set up (rules, and bridges to GitHub status and Pomodoro)"
+command = ["bin/setup"]
+
+[[actions]]
+id = "focus"
+title = "keybars: Focus timer start / stop"
+command = ["bin/focus"]
+
+[[actions]]
 id = "toggle"
 title = "keybars: agent lights off / on"
 command = ["bin/watch", "toggle"]
@@ -23,6 +33,11 @@ command = ["bin/watch", "toggle"]
 id = "keyboard"
 title = "keybars: keyboard lights off / on"
 command = ["bin/watch", "keyboard"]
+
+[[actions]]
+id = "remove-bridges"
+title = "keybars: remove the bridges from GitHub status and Pomodoro"
+command = ["bin/setup", "remove"]
 
 [[actions]]
 id = "restart"

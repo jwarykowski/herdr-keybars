@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+# herdr-keybars setup: installs the marketplace's GitHub rule packs in keybars
+# Pro and links the bridge into herdr-gh's and herdr-pomodoro's hooks, when
+# they're installed.
+# A hook you made yourself is left alone. Run it again after updating.
+#
+# usage: setup          install the pack and the bridge hooks
+#        setup remove   take the bridge hooks out (the packs stay: keybars-pro
+#                       market remove github-ci-pack, and so on)
+set -uo pipefail
+
+PATH="$PATH:$HOME/.local/bin:/usr/local/bin:/opt/homebrew/bin"
+
+root=$(cd "$(dirname "$0")/.." && pwd)
+herdr="${HERDR_BIN_PATH:-herdr}"
+kp="${HERDR_KEYBARS_COMMAND:-keybars-pro}"
+state_dir="${HERDR_PLUGIN_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/herdr-keybars}"
+config_dir="${HERDR_PLUGIN_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/herdr-keybars}"
+mark="# herdr-keybars bridge"
+
+gh_events=(ci.running ci.passed ci.failed review.approved review.changes_requested pull_request.merged pull_request.closed)
+pomodoro_events=(focus.started focus.break focus.done focus.stopped)
+# the marketplace's packs for herdr-gh's events, which it sends as GitHub's
+packs=(github-ci-pack review-nudges merge-confetti)
+
+say() {
+  echo "$1"
+  "$herdr" notification show "$1" >/dev/null 2>&1 || true
+}
+
+# hooks_dir is a plugin's hooks directory, or fails when it isn't installed
+hooks_dir() {
+  # read it whole: grep -q in a pipe can close it early, and pipefail
+  # then counts herdr's SIGPIPE as the plugin missing
+  local list dir
+  list=$("$herdr" plugin list 2>/dev/null) || return 1
+  [[ $list == *"$1"* ]] || return 1
+  dir=$("$herdr" plugin config-dir "$1" 2>/dev/null) && [[ -n $dir ]] || return 1
+  echo "$dir/hooks"
+}
+
+ours() { [[ -f $1 ]] && sed -n 2p "$1" | grep -qxF "$mark"; }
+
+# link writes a hook that runs the bridge with herdr-keybars' own state and
+# config, since a hook runs with the other plugin's
+link() {
+  local dir=$1 ev h
+  shift
+  mkdir -p "$dir"
+  for ev in "$@"; do
+    h="$dir/$ev"
+    if [[ -e $h ]] && ! ours "$h"; then
+      skipped+=("$h")
+      continue
+    fi
+    printf '#!/bin/sh\n%s\nHERDR_KEYBARS_STATE_DIR=%q HERDR_KEYBARS_CONFIG_DIR=%q exec %q\n' \
+      "$mark" "$state_dir" "$config_dir" "$root/bin/bridge" >"$h"
+    chmod +x "$h"
+    linked=$((linked + 1))
+  done
+}
+
+unlink() {
+  local dir=$1 ev
+  shift
+  for ev in "$@"; do
+    ours "$dir/$ev" && rm -f "$dir/$ev" && linked=$((linked + 1))
+  done
+}
+
+skipped=()
+linked=0
+if [[ ${1:-} == remove ]]; then
+  if d=$(hooks_dir jwarykowski.herdr-gh); then unlink "$d" "${gh_events[@]}"; fi
+  if d=$(hooks_dir jwarykowski.herdr-pomodoro); then unlink "$d" "${pomodoro_events[@]}"; fi
+  say "herdr-keybars: removed $linked bridge hooks"
+  exit 0
+fi
+
+if ! command -v "$kp" >/dev/null 2>&1; then
+  say "herdr-keybars needs keybars Pro's keybars-pro command: App settings, Install the command-line tool"
+  exit 1
+fi
+
+done_what=()
+installed=0
+for p in "${packs[@]}"; do
+  "$kp" market install "$p" >/dev/null 2>&1 && installed=$((installed + 1))
+done
+if ((installed == ${#packs[@]})); then
+  done_what+=("rule packs installed")
+else
+  done_what+=("$installed of ${#packs[@]} rule packs installed (is keybars Pro running?)")
+fi
+if d=$(hooks_dir jwarykowski.herdr-gh); then
+  link "$d" "${gh_events[@]}"
+  done_what+=("GitHub status bridged")
+fi
+if d=$(hooks_dir jwarykowski.herdr-pomodoro); then
+  link "$d" "${pomodoro_events[@]}"
+  done_what+=("Pomodoro bridged")
+fi
+msg="herdr-keybars: ${done_what[0]}"
+for w in "${done_what[@]:1}"; do msg+=", $w"; done
+((${#skipped[@]})) && msg+="; kept your own hooks: ${skipped[*]##*/}"
+say "$msg"

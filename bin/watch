@@ -4,6 +4,10 @@
 #   number key N  workspace N (as ctrl+alt+N): breathing while its agent is
 #                 blocked on you, held while it's done
 #   top-right     breathing while any agent is blocked (next-agent jumps there)
+#   number key N  also held red while workspace N's CI fails, as herdr-gh
+#                 reports it through the bridge (bin/bridge), when no agent
+#                 state is showing
+#   $focus        keybars Pro's Focus timer in herdr's sidebar: 🎯12m, ☕3m
 # Lights play over keybars Pro's music, and only what changes is sent.
 #
 # usage: watch start    spawn the watcher in the background (startup hook)
@@ -36,6 +40,12 @@ disabled="$state_dir/disabled"
 : "${HERDR_KEYBARS_EVENTS:=1}"
 # workspace keys 1-9 by position; empty picks them for the keyboard
 : "${HERDR_KEYBARS_KEYS:=}"
+# failing CI on the workspace's key, from herdr-gh through the bridge
+: "${HERDR_KEYBARS_CI_KEYS:=1}"
+: "${HERDR_KEYBARS_CI:=red}"
+: "${HERDR_KEYBARS_CI_EFFECT:=hold}"
+# the sidebar token for keybars Pro's Focus timer; empty for none
+: "${HERDR_KEYBARS_FOCUS_TOKEN:=focus}"
 # shellcheck source=/dev/null
 [[ -f "$config_dir/config.env" ]] && source "$config_dir/config.env"
 
@@ -62,27 +72,45 @@ keys() {
   esac
 }
 
+# failing is the workspace IDs whose CI is failing, as a JSON array
+failing() {
+  local f ids=()
+  if ((HERDR_KEYBARS_CI_KEYS)); then
+    for f in "$state_dir"/ci/*; do
+      [[ -e $f ]] && ids+=("${f##*/}")
+    done
+  fi
+  ((${#ids[@]})) || {
+    echo '[]'
+    return
+  }
+  printf '%s\n' "${ids[@]}" | jq -R . | jq -s .
+}
+
 # frame is "key state label" for each lit key, from herdr's workspaces; fails
-# when herdr isn't reachable
+# when herdr isn't reachable. An agent's state wins over failing CI.
 frame() {
   local workspaces
   workspaces=$("$herdr" workspace list 2>/dev/null) || return 1
-  jq -r --argjson keys "$(tr ' ' '\n' <<<"$1" | jq -R . | jq -s .)" --arg jump "$HERDR_KEYBARS_JUMP" '
+  jq -r --argjson keys "$(tr ' ' '\n' <<<"$1" | jq -R . | jq -s .)" --arg jump "$HERDR_KEYBARS_JUMP" \
+    --argjson failing "$(failing)" '
     .result.workspaces
-    | (map(select(.number >= 1 and .number <= ($keys | length)
-                  and (.agent_status == "blocked" or .agent_status == "done"))
-           | "\($keys[.number - 1]) \(.agent_status) \(.label // .number | tostring | gsub(" "; "-"))")
+    | (map(select(.number >= 1 and .number <= ($keys | length))
+           | (if .agent_status == "blocked" or .agent_status == "done" then .agent_status
+              elif (.workspace_id as $w | $failing | index($w)) then "ci"
+              else empty end) as $state
+           | "\($keys[.number - 1]) \($state) \(.label // .number | tostring | gsub(" "; "-"))")
        + (if any(.agent_status == "blocked") then ["\($jump) blocked -"] else [] end))
     | .[]' <<<"$workspaces"
 }
 
 light() {
   local key=$1 state=$2
-  if [[ $state == blocked ]]; then
-    "$kp" light "$key" "$HERDR_KEYBARS_BLOCKED" -effect "$HERDR_KEYBARS_BLOCKED_EFFECT" >/dev/null 2>&1
-  else
-    "$kp" light "$key" "$HERDR_KEYBARS_DONE" -effect "$HERDR_KEYBARS_DONE_EFFECT" >/dev/null 2>&1
-  fi
+  case $state in
+    blocked) "$kp" light "$key" "$HERDR_KEYBARS_BLOCKED" -effect "$HERDR_KEYBARS_BLOCKED_EFFECT" >/dev/null 2>&1 ;;
+    ci) "$kp" light "$key" "$HERDR_KEYBARS_CI" -effect "$HERDR_KEYBARS_CI_EFFECT" >/dev/null 2>&1 ;;
+    *) "$kp" light "$key" "$HERDR_KEYBARS_DONE" -effect "$HERDR_KEYBARS_DONE_EFFECT" >/dev/null 2>&1 ;;
+  esac
 }
 
 event() {
@@ -125,12 +153,35 @@ clear_all() {
   return 0
 }
 
+# focus_value is the Focus timer as a sidebar token: 🎯12m, ☕3m, or nothing
+focus_value() {
+  "$kp" focus status -json 2>/dev/null | jq -r '
+    if .phase == "work" then "🎯\((.remaining / 60) | ceil)m"
+    elif .phase == "break" then "☕\((.remaining / 60) | ceil)m"
+    else "" end' 2>/dev/null
+}
+
+# report_focus puts the Focus token on every workspace, or clears it; it
+# lives 90 seconds, so a stopped watcher's token doesn't linger
+report_focus() {
+  local id
+  for id in $("$herdr" workspace list 2>/dev/null | jq -r '.result.workspaces[].workspace_id // empty'); do
+    if [[ -n $1 ]]; then
+      "$herdr" workspace report-metadata "$id" --source herdr-keybars --ttl-ms 90000 \
+        --token "$HERDR_KEYBARS_FOCUS_TOKEN=$1" >/dev/null 2>&1
+    else
+      "$herdr" workspace report-metadata "$id" --source herdr-keybars \
+        --clear-token "$HERDR_KEYBARS_FOCUS_TOKEN" >/dev/null 2>&1
+    fi
+  done
+}
+
 running() {
   [[ -f "$pidfile" ]] && kill -0 "$(cat "$pidfile")" 2>/dev/null
 }
 
 run() {
-  local last="" current misses=0 ks
+  local last="" current misses=0 ks focus="" shown="" reported=0
   mkdir -p "$state_dir"
   running || echo $$ >"$pidfile" # started directly (start already wrote it)
   if ! have_keybars; then
@@ -153,6 +204,14 @@ run() {
     # send only on change; a failed send (app closed) retries next tick
     if [[ "$current" != "$last" ]]; then
       apply "$current" "$last" && last="$current"
+    fi
+    # the Focus token on change, and each minute so it doesn't expire
+    if [[ -n $HERDR_KEYBARS_FOCUS_TOKEN ]]; then
+      focus=$(focus_value)
+      if [[ $focus != "$shown" ]] || { [[ -n $focus ]] && ((SECONDS - reported >= 60)); }; then
+        report_focus "$focus"
+        shown=$focus reported=$SECONDS
+      fi
     fi
     # background sleep + wait, so stop's TERM lands immediately
     sleep "$HERDR_KEYBARS_INTERVAL" &

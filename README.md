@@ -11,6 +11,13 @@ you without looking at the screen.
   `next-agent` action and one press takes you there.
 - **Your own rules** get `agent.waiting` and `agent.done` too, with the
   workspace as the repository, so keybars Pro's Notify page can do more.
+- **With [herdr-gh](https://github.com/jwarykowski/herdr-gh)**, failing CI
+  holds the workspace's number key red (when no agent state is showing), and
+  its events reach keybars Pro as GitHub's, so the marketplace's GitHub packs
+  play them: the top row chases while CI runs, Escape holds red until it
+  passes, reviews light the top-right key, and a merge sparkles.
+- **With herdr-pomodoro**, a round starts and stops keybars Pro's Focus timer,
+  so there's one timer. `$focus` shows it in herdr's sidebar either way.
 
 It drives the keyboard with keybars Pro's
 [command line](https://keybars.app/pro/cli/), so it works on any keyboard
@@ -32,15 +39,29 @@ herdr plugin install jwarykowski/herdr-keybars
 ```
 
 The watcher starts with each herdr session and exits when herdr stops,
-clearing its lights.
+clearing its lights. Then run the **setup** action once (and again after
+updating). It installs the marketplace's `github-ci-pack`, `review-nudges`
+and `merge-confetti` in keybars Pro and bridges herdr-gh and herdr-pomodoro if they're installed. The bridge is a
+hook in each of their `hooks/` folders, and any hook you already have there
+is left alone.
+
+Add `$focus` to herdr's sidebar to see the Focus timer (`🎯12m`, `☕3m`):
+
+```toml
+[ui.sidebar.spaces]
+rows = [["state_icon", "workspace", "$focus"], ["branch", "git_status"]]
+```
 
 ## Actions
 
 | action | does |
 |---|---|
 | `jwarykowski.herdr-keybars.next-agent` | focus the next blocked agent, else the next done one; repeat to cycle |
+| `jwarykowski.herdr-keybars.setup` | install the GitHub rule packs, and bridge herdr-gh and herdr-pomodoro |
+| `jwarykowski.herdr-keybars.focus` | keybars Pro's Focus timer start / stop |
 | `jwarykowski.herdr-keybars.toggle` | agent lights off / on |
 | `jwarykowski.herdr-keybars.keyboard` | keybars Pro's lights off / on (its On switch) |
+| `jwarykowski.herdr-keybars.remove-bridges` | take the bridge hooks out of herdr-gh and herdr-pomodoro |
 | `jwarykowski.herdr-keybars.restart` | restart the watcher, e.g. after a config change |
 
 Bind them in herdr's `config.toml`, then point keyboard keys at those chords
@@ -74,11 +95,24 @@ The blocked and done keys can use any of keybars Pro's effects; set them in
 The ones that play once suit a moment, such as `ripple` when an agent
 finishes; the rest suit a state that lasts, such as `breathe` while one waits.
 
-Hooks from other plugins can light the board themselves with
+## The bridges
+
+| from | event | becomes |
+|---|---|---|
+| herdr-gh | `ci.running`, `ci.passed`, `ci.failed`, `review.approved`, `review.changes_requested`, `pull_request.merged`, `pull_request.closed` | the same event, as GitHub's: `keybars-pro notify -source github -repo owner/name -branch b ci.failed`; failing CI also marks the workspace for its number key |
+| herdr-pomodoro | `focus.started`, `focus.stopped` | `keybars-pro focus start 25m` (the round's length), `focus stop` |
+
+Both plugins name their events as keybars Pro does, so nothing is renamed on
+the way. Rules decide the keys, so change them on keybars Pro's Notify page as
+with any rule; any GitHub rule plays herdr-gh's events, whether they came from
+herdr-gh or GitHub's webhook. `HERDR_KEYBARS_POMODORO=events` sends herdr-pomodoro's
+`focus.*` events to Notify instead, for rules of your own.
+
+Hooks from other plugins can still light the board themselves with
 [`keybars-pro light`](https://keybars.app/pro/cli/#light), with any effect: a
 merged PR in [herdr-gh](https://github.com/jwarykowski/herdr-gh)'s
-`hooks/pr.merged`, or a finished round in herdr-pomodoro's
-`hooks/pomodoro.work_done`:
+`hooks/pull_request.merged`, or a finished round in herdr-pomodoro's
+`hooks/focus.break`:
 
 ```sh
 #!/bin/sh
@@ -99,8 +133,9 @@ On a Moonlander, workspaces 1–9 are the number row's 1–5 and 6–9
 
 ## Development
 
-`make check` runs shellcheck and `tests/watch_test.sh`, which drives
-`bin/watch` with fake `herdr` and `keybars-pro` commands.
+`make check` runs shellcheck, `tests/watch_test.sh` and
+`tests/bridge_test.sh`, which drive the scripts with fake `herdr` and
+`keybars-pro` commands.
 
 ## Licence
 

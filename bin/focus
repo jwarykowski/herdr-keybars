@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# herdr-keybars focus: start keybars Pro's Focus timer, or stop it if it's
+# running. The watcher shows it in the sidebar as $focus.
+set -uo pipefail
+
+PATH="$PATH:$HOME/.local/bin:/usr/local/bin:/opt/homebrew/bin"
+
+herdr="${HERDR_BIN_PATH:-herdr}"
+kp="${HERDR_KEYBARS_COMMAND:-keybars-pro}"
+
+notify() { "$herdr" notification show "$1" >/dev/null 2>&1 || true; }
+
+if ! phase=$("$kp" focus status -json 2>/dev/null | jq -r '.phase // ""'); then
+  notify "keybars Pro isn't running"
+  exit 0
+fi
+if [[ -n $phase ]]; then
+  "$kp" focus stop >/dev/null 2>&1 && notify "Focus stopped"
+else
+  "$kp" focus start >/dev/null 2>&1 && notify "Focus started"
+fi

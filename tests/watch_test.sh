@@ -18,6 +18,7 @@ cat >"$tmp/keybars-pro" <<'SH'
 #!/bin/sh
 case "$1 $2" in
   "status -json") echo '{"keyboard":"Moonlander Mark I"}' ;;
+  "focus status") cat "$FAKE/focus.json" 2>/dev/null || echo '{"phase":""}' ;;
   *) echo "$*" >>"$FAKE/kp.log" ;;
 esac
 SH
@@ -27,7 +28,7 @@ workspaces() {
   # number:status pairs
   local out='{"result":{"workspaces":[' sep=""
   for p in "$@"; do
-    out+="$sep{\"number\":${p%%:*},\"label\":\"ws ${p%%:*}\",\"agent_status\":\"${p#*:}\"}"
+    out+="$sep{\"number\":${p%%:*},\"workspace_id\":\"w${p%%:*}\",\"label\":\"ws ${p%%:*}\",\"agent_status\":\"${p#*:}\"}"
     sep=,
   done
   echo "$out]}}" >"$tmp/workspaces.json"
@@ -82,6 +83,33 @@ settle
 expect "clear r1c2"
 expect "clear r1c10"
 expect "clear top-right"
+
+# failing CI holds the workspace's key red, unless its agent is showing
+: >"$tmp/kp.log"
+mkdir -p "$tmp/state/ci"
+echo me/repo >"$tmp/state/ci/w2"
+settle
+expect "light r1c3 red -effect hold"
+workspaces 1:working 2:blocked
+settle
+expect "light r1c3 amber -effect breathe"
+: >"$tmp/kp.log"
+workspaces 1:working 2:working
+settle
+expect "light r1c3 red -effect hold"
+rm "$tmp/state/ci/w2"
+settle
+expect "clear r1c3"
+
+# the Focus timer reaches the sidebar as $focus, and goes when it stops
+echo '{"phase":"work","remaining":700}' >"$tmp/focus.json"
+settle
+grep -qF -- "workspace report-metadata w1 --source herdr-keybars --ttl-ms 90000 --token focus=🎯12m" "$tmp/herdr.log" ||
+  { echo "FAIL: no focus token" >&2; fail=1; }
+echo '{"phase":""}' >"$tmp/focus.json"
+settle
+grep -qF -- "workspace report-metadata w1 --source herdr-keybars --clear-token focus" "$tmp/herdr.log" ||
+  { echo "FAIL: focus token not cleared" >&2; fail=1; }
 
 kill "$pid"
 wait "$pid" 2>/dev/null || true

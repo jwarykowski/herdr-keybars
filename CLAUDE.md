@@ -27,5 +27,5 @@ mind while working here.
 ## Related repos (in ~/development)
 
 - `keybars-pro`: the app and the `keybars-pro` command this drives. A change
-  to its CLI or Notify events can break this plugin.
+  to its CLI or alert events can break this plugin.
 - `keybars.nvim`: the Neovim plugin, which drives keybars Pro the same way.

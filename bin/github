@@ -8,7 +8,7 @@
 #
 # is a workspace token ($gh by default) that expires after three missed polls,
 # so stopping leaves nothing stale. Changes go to keybars Pro as GitHub's own
-# events (keybars-pro notify -source github), so GitHub rules play them:
+# events (keybars-pro alert -source github), so GitHub rules play them:
 # ci.running, ci.passed, ci.failed, review.approved, review.changes_requested,
 # pull_request.merged and pull_request.closed. Failing CI also marks the
 # workspace, so the watcher holds its number key red. It uses your gh login,
@@ -85,7 +85,7 @@ event() {
     ci.failed) echo "$repo" >"$state_dir/ci/$id" ;;
     ci.passed | pull_request.*) rm -f "$state_dir/ci/$id" ;;
   esac
-  have_keybars && "$kp" notify -q -source github -repo "$repo" -branch "$pr_branch" "$1"
+  have_keybars && "$kp" alert -q -source github -repo "$repo" -branch "$pr_branch" "$1"
   return 0
 }
 

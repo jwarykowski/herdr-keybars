@@ -30,7 +30,7 @@ disabled="$state_dir/disabled"
 : "${HERDR_KEYBARS_JUMP:=top-right}"
 : "${HERDR_KEYBARS_INTERVAL:=1}"
 # also send agent.waiting / agent.done events, with -repo the workspace's
-# label, so your own Notify rules can react
+# label, so your own alert rules can react
 : "${HERDR_KEYBARS_EVENTS:=1}"
 # workspace keys 1-9 by position; empty picks them for the keyboard
 : "${HERDR_KEYBARS_KEYS:=}"
@@ -102,8 +102,8 @@ event() {
   local state=$1 label=$2
   ((HERDR_KEYBARS_EVENTS)) && [[ $label != - ]] || return 0
   case $state in
-    blocked) "$kp" notify -q -repo "$label" agent waiting ;;
-    done) "$kp" notify -q -repo "$label" agent "done" ;;
+    blocked) "$kp" alert -q -repo "$label" agent waiting ;;
+    done) "$kp" alert -q -repo "$label" agent "done" ;;
   esac
 }
 

@@ -46,8 +46,8 @@ check grep -qF "workspace report-metadata w1 --source herdr-keybars --ttl-ms 180
 
 pr OPEN FAILURE CHANGES_REQUESTED
 once
-expect "notify -q -source github -repo me/app -branch fix/it ci.failed"
-expect "notify -q -source github -repo me/app -branch fix/it review.changes_requested"
+expect "alert -q -source github -repo me/app -branch fix/it ci.failed"
+expect "alert -q -source github -repo me/app -branch fix/it review.changes_requested"
 check test "$(cat "$tmp/state/ci/w1")" = me/app
 check grep -qF "token gh=#412│×│!" "$tmp/herdr.log"
 
@@ -57,11 +57,11 @@ check test ! -s "$tmp/kp.log" # nothing changed, nothing sent
 
 pr OPEN running CHANGES_REQUESTED
 once
-expect "notify -q -source github -repo me/app -branch fix/it ci.running"
+expect "alert -q -source github -repo me/app -branch fix/it ci.running"
 pr OPEN SUCCESS APPROVED
 once
-expect "notify -q -source github -repo me/app -branch fix/it ci.passed"
-expect "notify -q -source github -repo me/app -branch fix/it review.approved"
+expect "alert -q -source github -repo me/app -branch fix/it ci.passed"
+expect "alert -q -source github -repo me/app -branch fix/it review.approved"
 check test ! -e "$tmp/state/ci/w1"
 
 pr OPEN FAILURE APPROVED
@@ -69,7 +69,7 @@ once
 check test -e "$tmp/state/ci/w1"
 pr MERGED FAILURE APPROVED
 once
-expect "notify -q -source github -repo me/app -branch fix/it pull_request.merged"
+expect "alert -q -source github -repo me/app -branch fix/it pull_request.merged"
 check test ! -e "$tmp/state/ci/w1"
 check grep -qF "token gh=#412│↗" "$tmp/herdr.log"
 

@@ -44,7 +44,7 @@ workspaces 1:blocked 2:working
 settle
 expect "light r1c2 amber -effect breathe"
 expect "light top-right amber -effect breathe"
-expect "notify -q -repo ws-1 agent waiting"
+expect "alert -q -repo ws-1 agent waiting"
 
 : >"$tmp/kp.log"
 settle
@@ -54,7 +54,7 @@ workspaces 1:done 2:working 7:blocked
 settle
 expect "light r1c2 green -effect hold"
 expect "light r1c10 amber -effect breathe"
-expect "notify -q -repo ws-1 agent done"
+expect "alert -q -repo ws-1 agent done"
 reject "light top-right amber -effect breathe" # still blocked: unchanged
 
 : >"$tmp/kp.log"

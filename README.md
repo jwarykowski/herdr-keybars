@@ -12,7 +12,7 @@ herdr-pomodoro.
 - **The top-right key** breathes while any agent is blocked; bind it to the
   `next-agent` action and one press takes you there.
 - **Your own rules** get `agent.waiting` and `agent.done` too, with the
-  workspace as the repository, so keybars Pro's Notify page can do more.
+  workspace as the repository, so keybars Pro's Alerts page can do more.
 - **Pull requests**: `$gh` in the sidebar shows each workspace's PR in a few
   characters (`#412│×│!`), from your own `gh` login. Its changes reach keybars
   Pro as GitHub's events, so the marketplace's GitHub packs play them: the top
@@ -34,7 +34,7 @@ It replaces herdr-zsa-lights, which needed Keymapp and kontroll.
 - herdr 0.9.3+
 - keybars Pro running, with its command installed: App settings, Command
   line, **Install the command-line tool** (`keybars-pro` on your PATH), in a
-  build with `keybars-pro notify -source`.
+  build with `keybars-pro alert -source`.
 - `jq`, `bash`
 - for pull requests: [`gh`](https://cli.github.com), logged in (`gh auth login`), and `git`
 
@@ -119,9 +119,9 @@ first pane:
 Each change goes to keybars Pro as GitHub's own event, about the PR's
 repository and branch: `ci.running`, `ci.passed`, `ci.failed`,
 `review.approved`, `review.changes_requested`, `pull_request.merged` and
-`pull_request.closed`, as `keybars-pro notify -source github`. So any GitHub
+`pull_request.closed`, as `keybars-pro alert -source github`. So any GitHub
 rule plays it, the same as if it came through GitHub's webhook; change the
-keys on keybars Pro's Notify page as with any rule. The reporter checks once a
+keys on keybars Pro's Alerts page as with any rule. The reporter checks once a
 minute, so a change shows up to a minute later, and a PR it hasn't seen before
 is only recorded, so a restart sends nothing.
 

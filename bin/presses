@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# herdr-keybars presses: an alert rule's Go to the agent, pressed on the
+# keyboard (or in keybars Pro's window, tray or keybars-pro press), focuses
+# the agent of the workspace the alert named, as bin/watch names them in
+# -repo, else the agent that needs you most, as next-agent picks.
+#
+# usage: presses start    spawn the listener in the background (startup hook)
+#        presses stop     stop it
+#        presses run      listen in the foreground until herdr goes away
+set -uo pipefail
+
+# shellcheck source-path=SCRIPTDIR/..
+# shellcheck source=lib/herdr.sh
+source "$(cd "$(dirname "$0")/.." && pwd)/lib/herdr.sh"
+
+# agent_in is the pane of the agent in the workspace labelled $1 (as bin/watch
+# sends it: spaces as dashes), one waiting on you first; empty for none
+agent_in() {
+  local workspaces agents id
+  workspaces=$("$herdr" workspace list 2>/dev/null) || return 0
+  id=$(jq -r --arg l "$1" '.result.workspaces[]
+    | select((.label // .number | tostring | gsub(" "; "-")) == $l) | .workspace_id' <<<"$workspaces" | head -n 1)
+  [[ -n $id ]] || return 0
+  agents=$("$herdr" agent list 2>/dev/null) || return 0
+  jq -r --arg w "$id" '.result.agents
+    | map(select(.workspace_id == $w))
+    | sort_by(if .agent_status == "blocked" then 0 elif .agent_status == "done" then 1 else 2 end)
+    | .[0].pane_id // empty' <<<"$agents"
+}
+
+# handle acts on one line of keybars-pro watch: a press whose action is
+# Go to the agent
+handle() {
+  local action label pane=""
+  action=$(jq -r 'select(.event == "pressed") | .data.do // empty' <<<"$1" 2>/dev/null)
+  [[ $action == agent ]] || return 0
+  label=$(jq -r '.data.event.repo // empty' <<<"$1")
+  [[ -n $label ]] && pane=$(agent_in "$label")
+  if [[ -n $pane ]]; then
+    "$herdr" agent focus "$pane" >/dev/null 2>&1
+  else
+    "$(dirname "$0")/next-agent"
+  fi
+}
+
+run() {
+  local fifo="$state_dir/presses.fifo" watcher=""
+  claim presses
+  if ! have_keybars; then
+    rm -f "$state_dir/presses.pid"
+    return 1
+  fi
+  trap 'kill "$watcher" 2>/dev/null; rm -f "$fifo" "$state_dir/presses.pid"; exit 0' INT TERM
+  rm -f "$fifo"
+  mkfifo "$fifo"
+  # watch ends when keybars Pro quits: listen again while herdr is up
+  while "$herdr" workspace list >/dev/null 2>&1; do
+    "$kp" watch -only pressed >"$fifo" 2>/dev/null &
+    watcher=$!
+    while IFS= read -r line; do
+      handle "$line"
+    done <"$fifo"
+    wait "$watcher" 2>/dev/null
+    sleep 5 &
+    wait $!
+  done
+  rm -f "$fifo" "$state_dir/presses.pid"
+}
+
+case "${1:-}" in
+  start) spawn presses ;;
+  stop) halt presses ;;
+  run) run ;;
+  *)
+    echo "usage: presses start|stop|run" >&2
+    exit 1
+    ;;
+esac

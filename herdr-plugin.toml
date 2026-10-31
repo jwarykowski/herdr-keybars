@@ -5,13 +5,16 @@ min_herdr_version = "0.9.3"
 description = "herdr on your keyboard through keybars Pro: number key N breathes while workspace N's agent waits on you and holds red while its CI fails, each workspace's pull request in the sidebar with its changes on the keys, and keybars Pro's Focus timer as $focus"
 platforms = ["linux", "macos"]
 
-# keep the watcher and the GitHub reporter running for the session; each
-# exits when herdr stops
+# keep the watcher, the GitHub reporter and the press listener running for
+# the session; each exits when herdr stops
 [[startup]]
 command = ["bin/watch", "start"]
 
 [[startup]]
 command = ["bin/github", "start"]
+
+[[startup]]
+command = ["bin/presses", "start"]
 
 [[actions]]
 id = "next-agent"
@@ -61,4 +64,4 @@ command = ["bin/watch", "keyboard"]
 [[actions]]
 id = "restart"
 title = "keybars: restart (after config changes)"
-command = ["sh", "-c", "bin/watch stop; bin/github stop; bin/watch start; bin/github start"]
+command = ["sh", "-c", "bin/watch stop; bin/github stop; bin/presses stop; bin/watch start; bin/github start; bin/presses start"]

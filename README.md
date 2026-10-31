@@ -103,6 +103,16 @@ The blocked and done keys can use any of keybars Pro's effects; set them in
 The ones that play once suit a moment, such as `ripple` when an agent
 finishes; the rest suit a state that lasts, such as `breathe` while one waits.
 
+## Pressing the key
+
+An alert rule in keybars Pro (1.1 and later) can do Go to the agent when
+it's pressed: on a keyboard with keybars firmware the lit key does it, and
+on any keyboard the rule's key in keybars Pro's window, its tray or
+`keybars-pro press` does. The plugin listens for those presses and focuses
+the agent in the workspace the event names (bin/watch sends
+`agent.waiting` and `agent.done` with the workspace's label as `-repo`),
+else the agent that needs you, as `next-agent` picks.
+
 ## Pull requests
 
 `$gh` shows each workspace's PR, found from the branch checked out in its

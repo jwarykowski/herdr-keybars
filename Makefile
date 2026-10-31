@@ -8,5 +8,6 @@ test:
 	bash tests/github_test.sh
 	bash tests/actions_test.sh
 	bash tests/mcp_test.sh
+	bash tests/presses_test.sh
 
 check: lint test
